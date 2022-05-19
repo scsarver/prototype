@@ -161,7 +161,7 @@ def construct_message():
     return json.dumps(payload)
 
 def get_teams_endpoint():
-    teams_endpoint = "https://vwcredit.webhook.office.com/webhookb2/0dd35e19-5ea0-40b5-95de-1645f56287f6@014caab2-8c85-49d4-9384-fe9b4beb5b8c/IncomingWebhook/d762877a142241ed8498683039c26fdb/988d4331-f46b-4b82-bea6-a6be75081b19"
+    teams_endpoint = "https://some.webhook.office.com/webhookb2/0dd35e19-5ea0-40b5-95de-notthehashyouarelookingfor/IncomingWebhook/d762stillnotthehashyouarelookingforc26fdb/988d4331-definatelynotthehashyouarelookingfor1b19"
     return teams_endpoint
 
 send_message(get_teams_endpoint(),construct_message())
