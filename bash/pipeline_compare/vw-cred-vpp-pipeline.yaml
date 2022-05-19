@@ -1,0 +1,915 @@
+groups:
+- jobs:
+  - feature-cfn-lint
+  - feature-code-analysis
+  - feature-quality-gate
+  - deploy-feature-dev
+  - dev-cfn-lint
+  - dev-code-analysis
+  - dev-quality-gate
+  - deploy-dev
+  - release-cfn-lint
+  - release-code-analysis
+  - release-quality-gate
+  - deploy-int
+  - master-cfn-lint
+  - master-code-analysis
+  - master-quality-gate
+  - deploy-custom-resources
+  - deploy-cons
+  - deploy-prod
+  name: all
+- jobs:
+  - feature-cfn-lint
+  - feature-code-analysis
+  - feature-quality-gate
+  - deploy-feature-dev
+  name: feature
+- jobs:
+  - dev-cfn-lint
+  - dev-code-analysis
+  - dev-quality-gate
+  - deploy-dev
+  name: develop
+- jobs:
+  - release-cfn-lint
+  - release-code-analysis
+  - release-quality-gate
+  - deploy-int
+  name: release
+- jobs:
+  - master-cfn-lint
+  - master-code-analysis
+  - master-quality-gate
+  - deploy-custom-resources
+  - deploy-cons
+  - deploy-prod
+  name: master
+- jobs:
+  - deploy-custom-resources
+  - deploy-dev
+  - deploy-int
+  - deploy-cons
+  - deploy-prod
+  name: deployment
+jobs:
+- name: feature-cfn-lint
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+  on_success:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: SUCCESSFUL
+        put: buildstatus
+  plan:
+  - get: source
+    resource: feature-source
+    trigger: true
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - put: dev
+  - file: source/ci/tasks/cfn-lint.yaml
+    task: cfn-lint
+  - file: source/ci/tasks/copy-files-to-s3.yaml
+    input_mapping:
+      aws-credentials: dev
+      source: code-coverage
+    params:
+      BUCKETNAME: vci-concourse
+      REPONAME: vwcredit/transformers-tenant-infra
+      TEAM_NAME: vw-cred-vpp
+    task: copy-cfn-output-file-to-s3
+- name: feature-code-analysis
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+  on_success:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: SUCCESSFUL
+        put: buildstatus
+  plan:
+  - get: source
+    passed:
+    - feature-cfn-lint
+    resource: feature-source
+    trigger: true
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - put: dev
+  - file: source/ci/tasks/copy-files-from-s3.yaml
+    input_mapping:
+      aws-credentials: dev
+    params:
+      BUCKETNAME: vci-concourse
+      REPONAME: vwcredit/transformers-tenant-infra
+      TEAM_NAME: vw-cred-vpp
+    task: copy-report-files-from-s3
+  - file: source/ci/tasks/code-coverage.yaml
+    input_mapping:
+      source: source-code-coverage
+    task: fix-file-paths-in-coverage-files
+  - params:
+      additional_properties_file: code-coverage/sonar-project.properties
+      project_path: code-coverage
+    put: code-analysis
+- name: feature-quality-gate
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+  on_success:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: SUCCESSFUL
+        put: buildstatus
+  plan:
+  - get: source
+    resource: feature-source
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - get: code-analysis
+    passed:
+    - feature-code-analysis
+    trigger: true
+  - file: source/ci/tasks/quality-gate.yaml
+    task: check-quality-gate
+- name: deploy-feature-dev
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+      - try:
+          params:
+            text: FAILED
+          put: webex-bot
+  on_success:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: SUCCESSFUL
+        put: buildstatus
+      - try:
+          params:
+            text: SUCCESSFUL
+          put: webex-bot
+  plan:
+  - get: source
+    passed:
+    - feature-quality-gate
+    resource: feature-source
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - put: dev
+  - put: int
+  - put: cons
+  - put: prod
+  - file: source/ci/tasks/aws-env.yaml
+    input_mapping:
+      aws-cons: cons
+      aws-dev: dev
+      aws-int: int
+      aws-prod: prod
+    task: aws-env
+  - file: source/ci/tasks/deploy.yaml
+    input_mapping:
+      aws-credentials: dev
+    params:
+      AWS_ENV: dev
+      REGION: us-east-1
+      TEAM_NAME: vw-cred-vpp
+      WEBEX_ROOMID: ((webex.roomId))
+      WEBEX_TOKEN: ((webex.token))
+      WEBEX_URI: ((webex.uri))
+      non_prod_chaincert: ((soapclient.non_prod_chaincert))
+      non_prod_clientcert: ((soapclient.non_prod_clientcert))
+      non_prod_privatekey: ((soapclient.non_prod_privatekey))
+    task: deploy
+- name: dev-cfn-lint
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+      - try:
+          params:
+            text: FAILED
+          put: webex-bot
+  plan:
+  - get: source
+    resource: dev-source
+    trigger: true
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - put: dev
+  - file: source/ci/tasks/cfn-lint.yaml
+    task: cfn-lint
+  - file: source/ci/tasks/copy-files-to-s3.yaml
+    input_mapping:
+      aws-credentials: dev
+      source: code-coverage
+    params:
+      BUCKETNAME: vci-concourse
+      REPONAME: vwcredit/transformers-tenant-infra
+      TEAM_NAME: vw-cred-vpp
+    task: copy-cfn-output-file-to-s3
+- name: dev-code-analysis
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+      - try:
+          params:
+            text: FAILED
+          put: webex-bot
+  plan:
+  - get: source
+    passed:
+    - dev-cfn-lint
+    resource: dev-source
+    trigger: true
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - put: dev
+  - file: source/ci/tasks/copy-files-from-s3.yaml
+    input_mapping:
+      aws-credentials: dev
+    params:
+      BUCKETNAME: vci-concourse
+      REPONAME: vwcredit/transformers-tenant-infra
+      TEAM_NAME: vw-cred-vpp
+    task: copy-report-files-from-s3
+  - file: source/ci/tasks/code-coverage.yaml
+    input_mapping:
+      source: source-code-coverage
+    task: fix-file-paths-in-coverage-files
+  - params:
+      additional_properties_file: code-coverage/sonar-project.properties
+      project_path: code-coverage
+    put: code-analysis
+- name: dev-quality-gate
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+      - try:
+          params:
+            text: FAILED
+          put: webex-bot
+  plan:
+  - get: source
+    resource: dev-source
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - get: code-analysis
+    passed:
+    - dev-code-analysis
+    trigger: true
+  - file: source/ci/tasks/quality-gate.yaml
+    task: check-quality-gate
+- name: deploy-dev
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+      - try:
+          params:
+            text: FAILED
+          put: webex-bot
+  on_success:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: SUCCESSFUL
+        put: buildstatus
+      - try:
+          params:
+            text: SUCCESSFUL
+          put: webex-bot
+  plan:
+  - get: source
+    passed:
+    - dev-quality-gate
+    resource: dev-source
+    trigger: true
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - put: dev
+  - put: int
+  - put: cons
+  - put: prod
+  - file: source/ci/tasks/aws-env.yaml
+    input_mapping:
+      aws-cons: cons
+      aws-dev: dev
+      aws-int: int
+      aws-prod: prod
+    task: aws-env
+  - file: source/ci/tasks/deploy.yaml
+    input_mapping:
+      aws-credentials: dev
+    params:
+      AWS_ENV: dev
+      REGION: us-east-1
+      TEAM_NAME: vw-cred-vpp
+      WEBEX_ROOMID: ((webex.roomId))
+      WEBEX_TOKEN: ((webex.token))
+      WEBEX_URI: ((webex.uri))
+      non_prod_chaincert: ((soapclient.non_prod_chaincert))
+      non_prod_clientcert: ((soapclient.non_prod_clientcert))
+      non_prod_privatekey: ((soapclient.non_prod_privatekey))
+    task: deploy
+- name: release-cfn-lint
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+      - try:
+          params:
+            text: FAILED
+          put: webex-bot
+  plan:
+  - get: source
+    resource: release-source
+    trigger: true
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - put: dev
+  - file: source/ci/tasks/cfn-lint.yaml
+    task: cfn-lint
+  - file: source/ci/tasks/copy-files-to-s3.yaml
+    input_mapping:
+      aws-credentials: dev
+      source: code-coverage
+    params:
+      BUCKETNAME: vci-concourse
+      REPONAME: vwcredit/transformers-tenant-infra
+      TEAM_NAME: vw-cred-vpp
+    task: copy-cfn-output-file-to-s3
+- name: release-code-analysis
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+      - try:
+          params:
+            text: FAILED
+          put: webex-bot
+  plan:
+  - get: source
+    passed:
+    - release-cfn-lint
+    resource: release-source
+    trigger: true
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - put: dev
+  - file: source/ci/tasks/copy-files-from-s3.yaml
+    input_mapping:
+      aws-credentials: dev
+    params:
+      BUCKETNAME: vci-concourse
+      REPONAME: vwcredit/transformers-tenant-infra
+      TEAM_NAME: vw-cred-vpp
+    task: copy-report-files-from-s3
+  - file: source/ci/tasks/code-coverage.yaml
+    input_mapping:
+      source: source-code-coverage
+    task: fix-file-paths-in-coverage-files
+  - params:
+      additional_properties_file: code-coverage/sonar-project.properties
+      project_path: code-coverage
+    put: code-analysis
+- name: release-quality-gate
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+      - try:
+          params:
+            text: FAILED
+          put: webex-bot
+  plan:
+  - get: source
+    resource: release-source
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - get: code-analysis
+    passed:
+    - release-code-analysis
+    trigger: true
+  - file: source/ci/tasks/quality-gate.yaml
+    task: check-quality-gate
+- name: deploy-int
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+      - try:
+          params:
+            text: FAILED
+          put: webex-bot
+  on_success:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: SUCCESSFUL
+        put: buildstatus
+      - try:
+          params:
+            text: SUCCESSFUL
+          put: webex-bot
+  plan:
+  - get: source
+    passed:
+    - release-quality-gate
+    resource: release-source
+    trigger: true
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - put: dev
+  - put: int
+  - put: cons
+  - put: prod
+  - file: source/ci/tasks/aws-env.yaml
+    input_mapping:
+      aws-cons: cons
+      aws-dev: dev
+      aws-int: int
+      aws-prod: prod
+    task: aws-env
+  - file: source/ci/tasks/deploy.yaml
+    input_mapping:
+      aws-credentials: int
+    params:
+      AWS_ENV: int
+      REGION: us-east-1
+      TEAM_NAME: vw-cred-vpp
+      WEBEX_ROOMID: ((webex.roomId))
+      WEBEX_TOKEN: ((webex.token))
+      WEBEX_URI: ((webex.uri))
+      non_prod_chaincert: ((soapclient.non_prod_chaincert))
+      non_prod_clientcert: ((soapclient.non_prod_clientcert))
+      non_prod_privatekey: ((soapclient.non_prod_privatekey))
+    task: deploy
+- name: master-cfn-lint
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+      - try:
+          params:
+            text: FAILED
+          put: webex-bot
+  plan:
+  - get: source
+    resource: master-source
+    trigger: true
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - put: dev
+  - file: source/ci/tasks/cfn-lint.yaml
+    task: cfn-lint
+  - file: source/ci/tasks/copy-files-to-s3.yaml
+    input_mapping:
+      aws-credentials: dev
+      source: code-coverage
+    params:
+      BUCKETNAME: vci-concourse
+      REPONAME: vwcredit/transformers-tenant-infra
+      TEAM_NAME: vw-cred-vpp
+    task: copy-cfn-output-file-to-s3
+- name: master-code-analysis
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+      - try:
+          params:
+            text: FAILED
+          put: webex-bot
+  plan:
+  - get: source
+    passed:
+    - master-cfn-lint
+    resource: master-source
+    trigger: true
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - put: dev
+  - file: source/ci/tasks/copy-files-from-s3.yaml
+    input_mapping:
+      aws-credentials: dev
+    params:
+      BUCKETNAME: vci-concourse
+      REPONAME: vwcredit/transformers-tenant-infra
+      TEAM_NAME: vw-cred-vpp
+    task: copy-report-files-from-s3
+  - file: source/ci/tasks/code-coverage.yaml
+    input_mapping:
+      source: source-code-coverage
+    task: fix-file-paths-in-coverage-files
+  - params:
+      additional_properties_file: code-coverage/sonar-project.properties
+      project_path: code-coverage
+    put: code-analysis
+- name: master-quality-gate
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+      - try:
+          params:
+            text: FAILED
+          put: webex-bot
+  plan:
+  - get: source
+    resource: master-source
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - get: code-analysis
+    passed:
+    - master-code-analysis
+    trigger: true
+  - file: source/ci/tasks/quality-gate.yaml
+    task: check-quality-gate
+- name: deploy-custom-resources
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+      - try:
+          params:
+            text: FAILED
+          put: webex-bot
+  on_success:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: SUCCESSFUL
+        put: buildstatus
+      - try:
+          params:
+            text: SUCCESSFUL
+          put: webex-bot
+  plan:
+  - get: source
+    passed:
+    - master-quality-gate
+    resource: master-source
+    trigger: true
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - put: dev
+  - put: int
+  - put: cons
+  - put: prod
+  - file: source/ci/tasks/aws-env.yaml
+    input_mapping:
+      aws-cons: cons
+      aws-dev: dev
+      aws-int: int
+      aws-prod: prod
+    task: aws-env
+  - file: source/ci/tasks/deploy-custom-resources.yaml
+    input_mapping:
+      aws-credentials: prod
+    params:
+      AWS_ENV: prod
+      REGION: us-east-1
+      TEAM_NAME: vw-cred-vpp
+    task: deploy-custom-resources
+- name: deploy-cons
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+      - try:
+          params:
+            text: FAILED
+          put: webex-bot
+  on_success:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: SUCCESSFUL
+        put: buildstatus
+      - try:
+          params:
+            text: SUCCESSFUL
+          put: webex-bot
+  plan:
+  - get: source
+    passed:
+    - master-quality-gate
+    - deploy-custom-resources
+    resource: master-source
+    trigger: true
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - put: dev
+  - put: int
+  - put: cons
+  - put: prod
+  - file: source/ci/tasks/aws-env.yaml
+    input_mapping:
+      aws-cons: cons
+      aws-dev: dev
+      aws-int: int
+      aws-prod: prod
+    task: aws-env
+  - file: source/ci/tasks/deploy.yaml
+    input_mapping:
+      aws-credentials: cons
+    params:
+      AWS_ENV: cons
+      REGION: us-east-1
+      TEAM_NAME: vw-cred-vpp
+      WEBEX_ROOMID: ((webex.roomId))
+      WEBEX_TOKEN: ((webex.token))
+      WEBEX_URI: ((webex.uri))
+      non_prod_chaincert: ((soapclient.non_prod_chaincert))
+      non_prod_clientcert: ((soapclient.non_prod_clientcert))
+      non_prod_privatekey: ((soapclient.non_prod_privatekey))
+    task: deploy
+- name: deploy-prod
+  on_failure:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: FAILED
+        put: buildstatus
+      - try:
+          params:
+            text: FAILED
+          put: webex-bot
+  on_success:
+    in_parallel:
+      steps:
+      - params:
+          repo: source
+          state: SUCCESSFUL
+        put: buildstatus
+      - try:
+          params:
+            text: SUCCESSFUL
+          put: webex-bot
+  plan:
+  - get: source
+    passed:
+    - deploy-cons
+    - deploy-custom-resources
+    resource: master-source
+  - params:
+      repo: source
+      state: INPROGRESS
+    put: buildstatus
+  - put: dev
+  - put: int
+  - put: cons
+  - put: prod
+  - file: source/ci/tasks/aws-env.yaml
+    input_mapping:
+      aws-cons: cons
+      aws-dev: dev
+      aws-int: int
+      aws-prod: prod
+    task: aws-env
+  - file: source/ci/tasks/deploy.yaml
+    input_mapping:
+      aws-credentials: prod
+    params:
+      AWS_ENV: prod
+      REGION: us-east-1
+      TEAM_NAME: vw-cred-vpp
+      WEBEX_ROOMID: ((webex.roomId))
+      WEBEX_TOKEN: ((webex.token))
+      WEBEX_URI: ((webex.uri))
+      prod_chaincert: ((soapclient.prod_chaincert))
+      prod_clientcert: ((soapclient.prod_clientcert))
+      prod_privatekey: ((soapclient.prod_privatekey))
+    task: deploy
+resource_types:
+- name: aws-credentials
+  source:
+    password: ((artifactory-password))
+    repository: mps-docker-virtual.artifactory.platform.vwfs.io/public/concourse/resources/aws-credentials
+    tag: 1.0.0
+    username: ((artifactory-username))
+  type: docker-image
+- name: buildstatus
+  source:
+    password: ((artifactory-password))
+    repository: mps-docker-virtual.artifactory.platform.vwfs.io/public/concourse/resources/bitbucket-buildstatus
+    tag: 1.0.0
+    username: ((artifactory-username))
+  type: docker-image
+- name: git-multibranch
+  source:
+    repository: cfcommunity/git-multibranch-resource
+  type: docker-image
+- name: sonar-runner
+  source:
+    repository: cathive/concourse-sonarqube-resource
+    tag: 0.10.0
+  type: docker-image
+- name: vci-concourse-http
+  source:
+    repository: vwcredit/vci-concourse-http
+    tag: latest
+  type: docker-image
+resources:
+- icon: file-chart
+  name: buildstatus
+  source:
+    password: ((transform.github.token))
+    repo_name: vwcredit/transformers-tenant-infra
+    username: ((transform.github.username))
+  type: buildstatus
+- icon: visual-studio-code
+  name: code-analysis
+  source:
+    __debug: ((sonarqube-parameters.debug))
+    host_url: ((sonarqube-parameters.url))
+    login: 5de19b6e615c290def24c4512432cb06ef8189e9
+  type: sonar-runner
+- icon: shield-lock
+  name: cons
+  source:
+    path: concourse/vw-cred-vpp/aws/sts/vw-cred-vpp-cons-GenericDeploymentRole
+    role_id: ((vw-cred-vpp-cons-GenericDeploymentRole-role_id))
+    secret_id: ((vw-cred-vpp-cons-GenericDeploymentRole-secret_id))
+  type: aws-credentials
+- icon: shield-lock
+  name: dev
+  source:
+    path: concourse/vw-cred-vpp/aws/sts/vw-cred-vpp-dev-GenericDeploymentRole
+    role_id: ((vw-cred-vpp-dev-GenericDeploymentRole-role_id))
+    secret_id: ((vw-cred-vpp-dev-GenericDeploymentRole-secret_id))
+  type: aws-credentials
+- icon: git
+  name: dev-source
+  source:
+    branch: develop
+    ignore_paths:
+    - support_scripts/**
+    - README.md
+    private_key: ((transform.github.private_key))
+    uri: git@github.platform.vwfs.io:vwcredit/transformers-tenant-infra.git
+  type: git
+- icon: git
+  name: feature-source
+  source:
+    branches: .*
+    ignore_branches: (master|develop|release/.*)
+    ignore_paths:
+    - support_scripts/**
+    - README.md
+    private_key: ((transform.github.private_key))
+    uri: git@github.platform.vwfs.io:vwcredit/transformers-tenant-infra.git
+  type: git-multibranch
+- icon: shield-lock
+  name: int
+  source:
+    path: concourse/vw-cred-vpp/aws/sts/vw-cred-vpp-int-GenericDeploymentRole
+    role_id: ((vw-cred-vpp-int-GenericDeploymentRole-role_id))
+    secret_id: ((vw-cred-vpp-int-GenericDeploymentRole-secret_id))
+  type: aws-credentials
+- icon: git
+  name: master-source
+  source:
+    branch: master
+    ignore_paths:
+    - support_scripts/**
+    - README.md
+    private_key: ((transform.github.private_key))
+    uri: git@github.platform.vwfs.io:vwcredit/transformers-tenant-infra.git
+  type: git
+- icon: shield-lock
+  name: prod
+  source:
+    path: concourse/vw-cred-vpp/aws/sts/vw-cred-vpp-prod-GenericDeploymentRole
+    role_id: ((vw-cred-vpp-prod-GenericDeploymentRole-role_id))
+    secret_id: ((vw-cred-vpp-prod-GenericDeploymentRole-secret_id))
+  type: aws-credentials
+- icon: git
+  name: release-source
+  source:
+    branches: release/.*
+    ignore_paths:
+    - support_scripts/**
+    - README.md
+    private_key: ((transform.github.private_key))
+    uri: git@github.platform.vwfs.io:vwcredit/transformers-tenant-infra.git
+  type: git-multibranch
+- icon: cisco-webex
+  name: webex-bot
+  source:
+    headers:
+      Authorization: ((webex.token))
+      Content-Type: application/json
+    json:
+      roomId: ((webex.roomId))
+      text: ((webex.text))
+    method: POST
+    uri: ((webex.uri))
+  type: vci-concourse-http

@@ -1,0 +1,14 @@
+{
+  "name": "webapp",
+  "version": "1.0.0",
+  "description": "Express web app example demonstrating the usage of node, npm and yarn.",
+  "main": "index.js",
+  "author": "Stephan Sarver",
+  "license": "MIT",
+  "dependencies": {
+    "express": "^4.17.2"
+  },
+  "scripts": {
+    "start": "node index2.js"
+  }
+}

@@ -1,0 +1,3 @@
+python/venv*
+awsrdk/venv*
+node/webapp/node_modules*

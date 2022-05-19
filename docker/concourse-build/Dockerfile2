@@ -1,0 +1,21 @@
+FROM bash
+
+RUN set -x \
+  apk add --update --force glibc; \
+  apk add --update --force groff; \
+  apk add --update --force less; \
+  apk add --update --force curl jq; \
+  apk add --update --force jq; \
+  ;\
+  which curl; \
+  ;\
+  ;\
+  # install aws cli \
+  curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip" \
+  unzip awscliv2.zip -qq \
+  ./aws/install; \
+                ;\
+  # install yq \
+  YAML_BIN_VERSION=3.3.2; \
+  curl "https://github.com/mikefarah/yq/releases/download/${YAML_BIN_VERSION}/yq_linux_amd64" -o /usr/local/bin/yq; \
+  chmod +x /usr/local/bin/yq;

@@ -1,0 +1,83 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <title>Concourse</title>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="manifest" href="/public/manifest.json?id=08ad7302e4ec47ef188a89897ba32dd6" />
+    <link rel="stylesheet" type="text/css" media="all" href="/public/main.css?id=5de2c30d12ff3117881392cc83dffb8c" />
+    <link rel="icon" type="image/png" id="favicon" href="/public/images/favicon.png?id=ac9c34f90047b8c51d980fd10cb8f23e" />
+    <script src="/public/elm.min.js?id=3719a9c5ac8c5d8c2ee8701823c86f99"></script>
+    <script src="/public/clipboard.min.js?id=3f3688138a1b9fc4ef669ce9056b6674"></script>
+    <style>
+        @keyframes pipeline-running {
+          0% { background-position-x: -53.5px; }
+          100% { background-position-x: 0; }
+        }
+        @-webkit-keyframes pipeline-running {
+          0% { background-position-x: -53.5px; }
+          100% { background-position-x: 0; }
+        }
+        @-webkit-keyframes container-rotate {
+          to { -webkit-transform: rotate(360deg) }
+        }
+        @keyframes container-rotate {
+          to { transform: rotate(360deg) }
+        }
+        @-webkit-keyframes fill-unfill-rotate {
+          12.5% { -webkit-transform: rotate(135deg);  }  
+          25%   { -webkit-transform: rotate(270deg);  }  
+          37.5% { -webkit-transform: rotate(405deg);  }  
+          50%   { -webkit-transform: rotate(540deg);  }  
+          62.5% { -webkit-transform: rotate(675deg);  }  
+          75%   { -webkit-transform: rotate(810deg);  }  
+          87.5% { -webkit-transform: rotate(945deg);  }  
+          to    { -webkit-transform: rotate(1080deg); }  
+        }
+        @keyframes fill-unfill-rotate {
+          12.5% { transform: rotate(135deg);  }  
+          25%   { transform: rotate(270deg);  }  
+          37.5% { transform: rotate(405deg);  }  
+          50%   { transform: rotate(540deg);  }  
+          62.5% { transform: rotate(675deg);  }  
+          75%   { transform: rotate(810deg);  }  
+          87.5% { transform: rotate(945deg);  }  
+          to    { transform: rotate(1080deg); }  
+        }
+        @-webkit-keyframes left-spin {
+          from { -webkit-transform: rotate(130deg); }
+          50% { -webkit-transform: rotate(-5deg); }
+          to { -webkit-transform: rotate(130deg); }
+        }
+        @keyframes left-spin {
+          from { transform: rotate(130deg); }
+          50% { transform: rotate(-5deg); }
+          to { transform: rotate(130deg); }
+        }
+        @-webkit-keyframes right-spin {
+          from { -webkit-transform: rotate(-130deg); }
+          50% { -webkit-transform: rotate(5deg); }
+          to { -webkit-transform: rotate(-130deg); }
+        }
+        @keyframes right-spin {
+          from { transform: rotate(-130deg); }
+          50% { transform: rotate(5deg); }
+          to { transform: rotate(-130deg); }
+        }
+    </style>
+  </head>
+  <body>
+    <div id="elm-app-embed"></div>
+    <script>
+      window.elmFlags = {
+        turbulenceImgSrc: "/public/images/buckleup.svg?id=15ff39e468832758192d171ecc60c86d",
+        notFoundImgSrc: "/public/images/parachute-error-404.svg?id=9a696f4273183b70dc4c76b21917415c",
+        csrfToken: "",
+        authToken: "",
+        pipelineRunningKeyframes: "pipeline-running",
+      };
+    </script>
+    <script src="/public/bundle.js?id=4eb131f28b4255e2910050aa64449c86" nomodule></script>
+    <script src="/public/elm-setup.js?id=3aecfd371f435daf0103845f5327ac90" type="module"></script>
+  </body>
+</html>

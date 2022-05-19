@@ -1,0 +1,347 @@
+AWSTemplateFormatVersion: 2010-09-09
+Description: Config rule for remediating S3 Bucket server side encryption default not being set.
+Parameters:
+  AWSEnvironment:
+    Description: What environment to deploy
+    Type: String
+    AllowedValues:
+      - dev
+      - int
+      - cons
+      - prod
+  VciIPV4:
+    Description: What ip address to replace
+    Type: String
+  WebexConfiguration:
+    Description: Webex Configuration
+    Type: String
+  TeamsConfiguration:
+    Description: MS Teams Configuration
+    Type: String
+Resources:
+  ResourceConfigRule:
+    Type: AWS::Config::ConfigRule
+    DependsOn: ADD DEPENDENCIES HERE!!!
+    Properties:
+      ConfigRuleName: PR-DS-P1-S3-Server-Side-Encryption
+      Description: Config rule for remediating S3 Bucket server side encryption default not being set.
+      Scope:
+        ComplianceResourceTypes:
+          - AWS::S3::Bucket
+      Source:
+        Owner: CUSTOM_LAMBDA
+        SourceIdentifier: !GetAtt
+          - ResourceConfigRuleLambdaFunction
+          - Arn
+  ResourceConfigRuleRemediationConfiguration:
+    Type: AWS::Config::RemediationConfiguration
+    DependsOn: ResourceConfigRule
+    Properties:
+      Automatic: true
+      ConfigRuleName: !Ref ResourceConfigRule
+      MaximumAutomaticAttempts: 6
+      RetryAttemptSeconds: 3600
+      Parameters:
+        AutomationAssumeRole:
+          StaticValue:
+            Values:
+              - !GetAtt ResourceConfigRuleRemediationConfigurationRole.Arn
+        Message:
+          ResourceValue:
+            Value: RESOURCE_ID
+        TopicArn:
+          StaticValue:
+            Values:
+              - !Ref ConfigSecurityGroupTopic
+      TargetId: AWS-EnableS3BucketEncryption
+      TargetType: SSM_DOCUMENT
+      TargetVersion: "1"
+      ParametersBucketName:
+        ResourceValue:
+          Value: RESOURCE_ID
+  ResourceConfigRuleRemediationConfigurationRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ssm.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: ResourceConfigRuleRemediationConfigurationRolePolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:CreateInstanceProfile
+                  - iam:ListInstanceProfilesForRole
+                  - iam:PassRole
+                  - ec2:DescribeIamInstanceProfileAssociations
+                  - iam:GetInstanceProfile
+                  - ec2:DisassociateIamInstanceProfile
+                  - ec2:AssociateIamInstanceProfile
+                  - iam:AddRoleToInstanceProfile
+                  - sns:Publish
+                Resource:
+                  - "arn:aws:lambda:*:*:*"
+                  - !Ref ConfigSecurityGroupTopic
+                  - !Ref SGSuccessfulTopic
+                  - !Ref SGFailedTopic
+                  - !Ref SGSuccessfulTopicTransformerEmailSubscription
+                  - !Ref SGFailedTopicTransformerEmailSubscription
+  ResourceConfigRuleLambdaFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Handler: index.lambda_handler
+      Role: !GetAtt ConfigSecurityGroupLambdaRole.Arn
+      Runtime: python3.7
+      Timeout: 60
+      Code: ../source/config-rule/security-group
+      Environment:
+        Variables:
+          sg_successful_topic_arn: !Ref SGSuccessfulTopic
+          sg_failed_topic_arn: !Ref SGFailedTopic
+          vci_ip_v4: !Ref VciIPV4
+  ConfigSecurityGroupLambdaRole:
+    Type: AWS::IAM::Role
+    Metadata:
+      cfn_nag:
+        rules_to_suppress:
+          - id: W11
+            reason: This IAM action ListAccountAliases, DescribeSecurityGroups requires the Resource properties to be declared as '*'.
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - lambda.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Policies:
+        - PolicyName: ConfigSecurityGroupLambdaPolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - sns:Publish
+                  - ec2:RevokeSecurityGroupIngress
+                  - ec2:UpdateSecurityGroupRuleDescriptionsIngress
+                  - ec2:AuthorizeSecurityGroupIngress
+                  - secretsmanager:GetSecretValue
+                Resource:
+                  - "arn:aws:ec2:*:*:security-group/*"
+                  - "arn:aws:sns:*:*:*"
+                  - "arn:aws:lambda:*:*:*"
+                  - "arn:aws:secretsmanager:*:*:*"
+              - Effect: Allow
+                Action:
+                  - ec2:DescribeSecurityGroups
+                  - iam:ListAccountAliases
+                Resource: '*'
+  ConfigSecurityGroupTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      Subscription:
+        - Endpoint: !GetAtt ConfigSecurityGroupLambdaFunction.Arn
+          Protocol: lambda
+      TopicName: ConfigSecurityGroupTopic
+  SGSuccessfulTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: SGSuccessfulTopic
+  SGFailedTopic:
+    Type: AWS::SNS::Topic
+    Properties:
+      TopicName: SGFailedTopic
+  SGSuccessfulTopicTransformerEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: transformers@vwcredit.com
+      Protocol: email
+      TopicArn: !Ref SGSuccessfulTopic
+  SGFailedTopicTransformerEmailSubscription:
+    Type: AWS::SNS::Subscription
+    Properties:
+      Endpoint: transformers@vwcredit.com
+      Protocol: email
+      TopicArn: !Ref SGFailedTopic
+  ConfigSecurityGroupTopicPolicy:
+    Type: AWS::SNS::TopicPolicy
+    Properties:
+      Topics:
+        - !Ref ConfigSecurityGroupTopic
+      PolicyDocument:
+        Version: 2008-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !Ref AWS::AccountId
+            Action:
+              - sns:Publish
+            Resource: !Ref ConfigSecurityGroupTopic
+  ConfigSecurityGroupTopicLambdaInvokePermission:
+    Type: AWS::Lambda::Permission
+    Properties:
+      Action: lambda:InvokeFunction
+      Principal: sns.amazonaws.com
+      SourceArn: !Ref ConfigSecurityGroupTopic
+      FunctionName: !GetAtt ConfigSecurityGroupLambdaFunction.Arn
+  CloudFormationDriftDetectionCheckRule:
+    Condition: CreateConsAndProdResources
+    Type: AWS::Config::ConfigRule
+    Properties:
+      ConfigRuleName: cloudformation-stack-drift-detection-check
+      Description: >-
+        Checks whether an AWS CloudFormation stack's actual configuration differs, or has drifted, from it's expected configuration
+      Scope:
+        ComplianceResourceTypes:
+          - 'AWS::CloudFormation::Stack'
+      InputParameters:
+        cloudformationRoleArn: !GetAtt CloudFormationDriftDetectRole.Arn
+      Source:
+        Owner: AWS
+        SourceIdentifier: CLOUDFORMATION_STACK_DRIFT_DETECTION_CHECK
+      MaximumExecutionFrequency: TwentyFour_Hours
+  CloudFormationDriftDetectedTopic:
+    Type: AWS::SNS::Topic
+    Condition: CreateConsAndProdResources
+    Properties:
+      TopicName: CloudFormationDriftDetectedTopic
+  CloudFormationDriftDetectedTopicSubscription:
+    Type: AWS::SNS::Subscription
+    Condition: CreateConsAndProdResources
+    Properties:
+      Endpoint: transformers@vwcredit.com
+      Protocol: email
+      TopicArn: !Ref CloudFormationDriftDetectedTopic
+  CloudFormationDriftRemediationConfiguration:
+    Type: AWS::Config::RemediationConfiguration
+    Condition: CreateConsAndProdResources
+    Properties:
+      Automatic: true
+      ConfigRuleName: !Ref CloudFormationDriftDetectionCheckRule
+      MaximumAutomaticAttempts: 1
+      RetryAttemptSeconds: 3600
+      Parameters:
+        AutomationAssumeRole:
+          StaticValue:
+            Values:
+              - !GetAtt CloudFormationDriftRemediationConfigurationRole.Arn
+        Message:
+          ResourceValue:
+            Value: RESOURCE_ID
+        TopicArn:
+          StaticValue:
+            Values:
+              - !Ref CloudFormationDriftDetectedTopic
+      TargetId: AWS-PublishSNSNotification
+      TargetType: SSM_DOCUMENT
+      TargetVersion: "1"
+  CloudFormationDriftRemediationConfigurationRole:
+    Condition: CreateConsAndProdResources
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - ssm.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      Policies:
+        - PolicyName: CloudFormationDriftRemediationConfigurationRolePolicy
+          PolicyDocument:
+            Version: 2012-10-17
+            Statement:
+              - Effect: Allow
+                Action:
+                  - iam:CreateInstanceProfile
+                  - iam:ListInstanceProfilesForRole
+                  - iam:PassRole
+                  - ec2:DescribeIamInstanceProfileAssociations
+                  - iam:GetInstanceProfile
+                  - ec2:DisassociateIamInstanceProfile
+                  - ec2:AssociateIamInstanceProfile
+                  - iam:AddRoleToInstanceProfile
+                  - sns:Publish
+                # Resource: '*'
+                Resource:
+                  - !Ref CloudFormationDriftDetectedTopic
+                  - !Ref CloudFormationDriftDetectedTopicSubscription
+                  - !GetAtt CloudFormationDriftDetectionCheckRule.Arn
+  CloudFormationDriftDetectRole:
+    Type: AWS::IAM::Role
+    Properties:
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service:
+                - config.amazonaws.com
+            Action:
+              - sts:AssumeRole
+      Path: "/"
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/ReadOnlyAccess'
+      Policies:
+        - PolicyName: AllowAccessToDriftDetection
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - 'cloudformation:DetectStackResourceDrift'
+                  - 'cloudformation:DescribeStackDriftDetectionStatus'
+                  - 'cloudformation:DetectStackDrift'
+                Resource: 'arn:aws:cloudformation:*:*:*'
+  WebexConfig:
+    Type: AWS::SecretsManager::Secret
+    Properties:
+      Description: Webex Configuration
+      Name: webex
+      SecretString: !Ref WebexConfiguration
+  WebexConfigResourcePolicy:
+    Type: AWS::SecretsManager::ResourcePolicy
+    Properties:
+      SecretId: !Ref WebexConfig
+      ResourcePolicy:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !Join
+                  - ':'
+                  - - 'arn:aws:iam:'
+                    - !Ref 'AWS::AccountId'
+                    - 'role/mps/federation/MPSDevOps'
+                - !Join
+                  - ':'
+                  - - 'arn:aws:iam:'
+                    - !Ref 'AWS::AccountId'
+                    - 'role/GenericDeploymentRole'
+            Action: secretsmanager:*
+            Resource: "*"
+          - Effect: Allow
+            Principal:
+              AWS:
+                - !GetAtt ConfigSecurityGroupLambdaRole.Arn
+            Action: secretsmanager:GetSecretValue
+            Resource: "*"

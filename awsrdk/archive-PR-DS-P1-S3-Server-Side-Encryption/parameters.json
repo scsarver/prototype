@@ -1,0 +1,13 @@
+{
+  "Version": "1.0",
+  "Parameters": {
+    "RuleName": "PR-DS-P1-S3-Server-Side-Encryption",
+    "Description": "PR-DS-P1-S3-Server-Side-Encryption",
+    "SourceRuntime": "python3.8",
+    "CodeKey": "PR-DS-P1-S3-Server-Side-Encryption.zip",
+    "InputParameters": "{\"infosec-approved-exceptions\": []}",
+    "OptionalParameters": "{}",
+    "SourceEvents": "AWS::S3::Bucket"
+  },
+  "Tags": "[]"
+}

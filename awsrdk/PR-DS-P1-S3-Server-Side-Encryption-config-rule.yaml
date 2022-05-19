@@ -1,0 +1,223 @@
+{
+  "AWSTemplateFormatVersion": "2010-09-09",
+  "Description": "AWS CloudFormation template to create custom AWS Config rules. You will be billed for the AWS resources used if you create a stack from this template.",
+  "Resources": {
+    "ConfigRole": {
+      "Type": "AWS::IAM::Role",
+      "DependsOn": "ConfigBucket",
+      "Properties": {
+        "RoleName": "config-role",
+        "Path": "/rdk/",
+        "ManagedPolicyArns": [
+          {
+            "Fn::Sub": "arn:${AWS::Partition}:iam::aws:policy/service-role/AWSConfigRole"
+          },
+          {
+            "Fn::Sub": "arn:${AWS::Partition}:iam::aws:policy/ReadOnlyAccess"
+          }
+        ],
+        "AssumeRolePolicyDocument": {
+          "Version": "2012-10-17",
+          "Statement": [
+            {
+              "Sid": "LOCAL",
+              "Effect": "Allow",
+              "Principal": {
+                "Service": [
+                  "config.amazonaws.com"
+                ]
+              },
+              "Action": "sts:AssumeRole"
+            },
+            {
+              "Sid": "REMOTE",
+              "Effect": "Allow",
+              "Principal": {
+                "AWS": {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${LambdaAccountId}:root"
+                }
+              },
+              "Action": "sts:AssumeRole"
+            }
+          ]
+        },
+        "Policies": [
+          {
+            "PolicyName": "DeliveryPermission",
+            "PolicyDocument": {
+              "Version": "2012-10-17",
+              "Statement": [
+                {
+                  "Effect": "Allow",
+                  "Action": "s3:PutObject*",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::${ConfigBucket}/AWSLogs/${AWS::AccountId}/*"
+                  },
+                  "Condition": {
+                    "StringLike": {
+                      "s3:x-amz-acl": "bucket-owner-full-control"
+                    }
+                  }
+                },
+                {
+                  "Effect": "Allow",
+                  "Action": "s3:GetBucketAcl",
+                  "Resource": {
+                    "Fn::Sub": "arn:${AWS::Partition}:s3:::${ConfigBucket}"
+                  }
+                }
+              ]
+            }
+          }
+        ]
+      }
+    },
+    "ConfigBucket": {
+      "Type": "AWS::S3::Bucket",
+      "Properties": {
+        "BucketName": {
+          "Fn::Sub": "config-bucket-${AWS::AccountId}-${AWS::Region}"
+        }
+      }
+    },
+    "ConfigurationRecorder": {
+      "Type": "AWS::Config::ConfigurationRecorder",
+      "Properties": {
+        "Name": "default",
+        "RoleARN": {
+          "Fn::GetAtt": [
+            "ConfigRole",
+            "Arn"
+          ]
+        },
+        "RecordingGroup": {
+          "AllSupported": true,
+          "IncludeGlobalResourceTypes": true
+        }
+      }
+    },
+    "DeliveryChannel": {
+      "Type": "AWS::Config::DeliveryChannel",
+      "Properties": {
+        "Name": "default",
+        "S3BucketName": {
+          "Ref": "ConfigBucket"
+        },
+        "ConfigSnapshotDeliveryProperties": {
+          "DeliveryFrequency": "One_Hour"
+        }
+      }
+    },
+    "PRDSP1S3ServerSideEncryptionConfigRule": {
+      "Type": "AWS::Config::ConfigRule",
+      "DependsOn": "DeliveryChannel",
+      "Properties": {
+        "ConfigRuleName": "PR-DS-P1-S3-Server-Side-Encryption",
+        "Description": "PR-DS-P1-S3-Server-Side-Encryption",
+        "Scope": {
+          "ComplianceResourceTypes": [
+            "AWS::S3::Bucket"
+          ]
+        },
+        "Source": {
+          "SourceDetails": [
+            {
+              "EventSource": "aws.config",
+              "MessageType": "ConfigurationItemChangeNotification"
+            }
+          ],
+          "Owner": "CUSTOM_LAMBDA",
+          "SourceIdentifier": {
+            "Fn::Sub": "arn:${AWS::Partition}:lambda:${AWS::Region}:${LambdaAccountId}:function:RDK-Rule-Function-PR-DS-P1-S3-Server-Side-Encryption"
+          }
+        },
+        "InputParameters": {
+          "infosec-approved-exceptions": {
+            "Ref": "PRDSP1S3ServerSideEncryptioninfosec-approved-exceptions"
+          }
+        }
+      }
+    },
+    "PRDSP1S3ServerSideEncryptionRemediation": {
+      "Type": "AWS::Config::RemediationConfiguration",
+      "DependsOn": [
+        "PRDSP1S3ServerSideEncryptionConfigRule",
+        "ConfigRole"
+      ],
+      "Properties": {
+        "Automatic": true,
+        "ConfigRuleName": "PR-DS-P1-S3-Server-Side-Encryption",
+        "MaximumAutomaticAttempts": "2",
+        "Parameters": {
+          "BucketName": {
+            "ResourceValue": {
+              "Value": "RESOURCE_ID"
+            }
+          },
+          "AutomationAssumeRole": {
+            "StaticValue": {
+              "Values": [
+                {
+                  "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/ssarver-rdk-testing-role"
+                }
+              ]
+            }
+          }
+        },
+        "ResourceType": "AWS::S3::Bucket",
+        "RetryAttemptSeconds": "30",
+        "TargetId": "AWS-EnableS3BucketEncryption",
+        "TargetType": "SSM_DOCUMENT"
+      }
+    }
+  },
+  "Conditions": {},
+  "Parameters": {
+    "LambdaAccountId": {
+      "Description": "Account ID that contains Lambda functions for Config Rules.",
+      "Type": "String",
+      "MinLength": "12",
+      "MaxLength": "12"
+    },
+    "PRDSP1S3ServerSideEncryptioninfosec-approved-exceptions": {
+      "Description": "Pass-through to required Input Parameter infosec-approved-exceptions for Config Rule PR-DS-P1-S3-Server-Side-Encryption",
+      "Default": "['ssarver-rdk-testing2']",
+      "Type": "String",
+      "MinLength": 1,
+      "ConstraintDescription": "This parameter is required."
+    }
+  },
+  "Metadata": {
+    "AWS::CloudFormation::Interface": {
+      "ParameterGroups": [
+        {
+          "Label": {
+            "default": "Lambda Account ID"
+          },
+          "Parameters": [
+            "LambdaAccountId"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Required"
+          },
+          "Parameters": [
+            "PRDSP1S3ServerSideEncryptioninfosec-approved-exceptions"
+          ]
+        },
+        {
+          "Label": {
+            "default": "Optional"
+          },
+          "Parameters": []
+        }
+      ],
+      "ParameterLabels": {
+        "LambdaAccountId": {
+          "default": "REQUIRED: Account ID that contains Lambda Function(s) that back the Rules in this template."
+        }
+      }
+    }
+  }
+}

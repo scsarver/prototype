@@ -1,0 +1,38 @@
+{
+  "Version": "1.0",
+  "Parameters": {
+    "RuleName": "PR-DS-P1-S3-Server-Side-Encryption",
+    "Description": "PR-DS-P1-S3-Server-Side-Encryption",
+    "SourceRuntime": "python3.8",
+    "CodeKey": "PR-DS-P1-S3-Server-Side-Encryption.zip",
+    "InputParameters": "{\"infosec-approved-exceptions\": []}",
+    "OptionalParameters": "{}",
+    "SourceEvents": "AWS::S3::Bucket",
+    "Remediation": {
+      "Automatic": true,
+      "ConfigRuleName": "PR-DS-P1-S3-Server-Side-Encryption",
+      "MaximumAutomaticAttempts": "2",
+      "Parameters": {
+        "BucketName": {
+          "ResourceValue": {
+            "Value": "RESOURCE_ID"
+          }
+        },
+        "AutomationAssumeRole": {
+          "StaticValue": {
+            "Values": [
+              {
+                "Fn::Sub": "arn:${AWS::Partition}:iam::${AWS::AccountId}:role/transformers/vci-tenant-infra-config-rule-PR-DS-P1-S3-Server-Side-Encryption"
+              }
+            ]
+          }
+        }
+      },
+      "ResourceType": "AWS::S3::Bucket",
+      "RetryAttemptSeconds": "30",
+      "TargetId": "AWS-EnableS3BucketEncryption",
+      "TargetType": "SSM_DOCUMENT"
+    }
+  },
+  "Tags": "[]"
+}
